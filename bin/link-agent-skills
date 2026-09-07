@@ -1,99 +1,81 @@
 #!/bin/bash
-#
-# Link the shared agent skills into every harness that reads SKILL.md files.
-#
-# One source of truth lives in config/claude/skills. Claude Code gets the whole
-# directory via a single symlink (see install-claude-code). Codex cannot take a
-# directory symlink, because ~/.codex/skills also holds Codex's own .system and
-# codex-primary-runtime skills, so it gets one symlink per shared skill instead.
+# Share standalone skills from dotfiles with Codex through its user skill path.
+# Claude Code links the whole source directory; Codex gets individual symlinks.
 
-set -e
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-step() { echo ""; echo -e "${BLUE}➜${NC} $1"; }
-success() { echo -e "${GREEN}✓${NC} $1"; }
-warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+set -euo pipefail
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+AGENT_CONFIG_HOME="${AGENT_CONFIG_HOME:-$HOME}"
 SOURCE="$DOTFILES_DIR/config/claude/skills"
+SHARED_SKILLS="$AGENT_CONFIG_HOME/.agents/skills"
+CODEX_DIR="${CODEX_HOME:-$AGENT_CONFIG_HOME/.codex}"
+BACKUP_DIR=""
 
-# Skills that work in any harness. Excluded on purpose:
-#   ui        needs the mcp__uidotsh__uidotsh_fetch tool, Claude only
-#   typefully declares Claude specific allowed-tools
-#   marketing, music  Claude plugin directories, no top level SKILL.md
-SHARED=(
-    audit-architecture
-    code-snippet-images
-    conductor
-    explain-changes
-    flare
-    grill-me
-    laravel-inertia-react-structure
-    livewire-4
-    mailcoach
-    react-best-practices
-    review-code
-    review-pr
-    spatie-guidelines
-    spatie-package-skeleton
-    speeding-up-laravel-tests
-    there-there
-    update-spatie-docs
-    write-freek-dev-blogpost
-)
+# Preserve existing installations outside skill discovery before linking them.
+link_shared() {
+    local source="$1" target="$2"
+    if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
+        return
+    fi
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        if [ -z "$BACKUP_DIR" ]; then
+            mkdir -p "$AGENT_CONFIG_HOME/.agents/backups"
+            BACKUP_DIR="$(mktemp -d "$AGENT_CONFIG_HOME/.agents/backups/link-agent-skills.XXXXXX")"
+        fi
+        mv "$target" "$BACKUP_DIR/$(basename "$target")"
+        echo "Preserved $target in $BACKUP_DIR"
+    fi
+    ln -s "$source" "$target"
+}
 
 if [ ! -d "$SOURCE" ]; then
-    warn "No skills directory at $SOURCE, nothing to link"
-    exit 0
+    echo "No skills directory at $SOURCE" >&2
+    exit 1
 fi
 
-# Codex
-CODEX_SKILLS="$HOME/.codex/skills"
-if [ -d "$HOME/.codex" ]; then
-    step "Linking shared skills into Codex"
-    mkdir -p "$CODEX_SKILLS"
+mkdir -p "$SHARED_SKILLS" "$CODEX_DIR"
 
-    # Drop anything we previously linked or copied, but never touch Codex's own.
-    for entry in "$CODEX_SKILLS"/*; do
-        [ -e "$entry" ] || continue
-        name="$(basename "$entry")"
-        case "$name" in
-            .system|codex-primary-runtime) continue ;;
-        esac
-        rm -rf "$entry"
-    done
-
-    for skill in "${SHARED[@]}"; do
-        if [ -d "$SOURCE/$skill" ]; then
-            ln -sfn "$SOURCE/$skill" "$CODEX_SKILLS/$skill"
-        else
-            warn "Skipping $skill, not found in $SOURCE"
-        fi
-    done
-
-    success "Linked ${#SHARED[@]} skills into $CODEX_SKILLS"
-
-    # Codex reads AGENTS.md natively, so it links straight to the canonical file.
-    ln -sfn "$DOTFILES_DIR/config/claude/AGENTS.md" "$HOME/.codex/AGENTS.md"
-    success "Linked AGENTS.md into ~/.codex"
-
-    # AGENTS.md tells every harness to use agent-browser, but that skill ships in
-    # a Claude plugin. The CLI it drives is on PATH, so link the newest copy of
-    # the skill doc so Codex knows how to drive it too.
-    AGENT_BROWSER="$(ls -td "$HOME"/.claude/plugins/cache/agent-browser/agent-browser/*/skills/agent-browser 2>/dev/null | head -1)"
-    if [ -n "$AGENT_BROWSER" ]; then
-        ln -sfn "$AGENT_BROWSER" "$CODEX_SKILLS/agent-browser"
-        success "Linked agent-browser from the Claude plugin"
-    else
-        warn "agent-browser plugin not found, Codex will not have it"
+# Remove only our own links when a source skill is removed or renamed.
+for target in "$SHARED_SKILLS"/*; do
+    [ -L "$target" ] || continue
+    skill="$(basename "$target")"
+    [ "$(readlink "$target")" = "$SOURCE/$skill" ] || continue
+    if [ ! -f "$SOURCE/$skill/SKILL.md" ]; then
+        rm "$target"
     fi
-else
-    warn "Codex not installed, skipping"
+done
+
+linked=0
+for entry in "$SOURCE"/*; do
+    [ -f "$entry/SKILL.md" ] || continue
+    skill="$(basename "$entry")"
+    case "$skill" in
+        # These depend on Claude-specific MCP tooling or plugin execution setup.
+        ui|typefully) continue ;;
+    esac
+    link_shared "$entry" "$SHARED_SKILLS/$skill"
+    linked=$((linked + 1))
+
+    # Migrate only links created by the old installer. Leave other skills alone.
+    legacy="$CODEX_DIR/skills/$skill"
+    if [ -L "$legacy" ] && [ "$(readlink "$legacy")" = "$entry" ]; then
+        rm "$legacy"
+    fi
+done
+
+echo "Linked $linked shared skills into $SHARED_SKILLS"
+
+if [ -f "$DOTFILES_DIR/config/claude/AGENTS.md" ]; then
+    link_shared "$DOTFILES_DIR/config/claude/AGENTS.md" "$CODEX_DIR/AGENTS.md"
+    echo "Linked shared AGENTS.md into $CODEX_DIR"
 fi
 
-echo ""
-success "Agent skills linked"
+# Use an existing agent-browser installation, or link the newest Claude plugin.
+if [ ! -e "$SHARED_SKILLS/agent-browser" ]; then
+    AGENT_BROWSER="$(ls -td "$AGENT_CONFIG_HOME"/.claude/plugins/cache/agent-browser/agent-browser/*/skills/agent-browser 2>/dev/null | head -1 || true)"
+    if [ -n "$AGENT_BROWSER" ]; then
+        link_shared "$AGENT_BROWSER" "$SHARED_SKILLS/agent-browser"
+    else
+        echo "agent-browser is not installed; install it separately if needed"
+    fi
+fi

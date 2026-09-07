@@ -88,6 +88,10 @@ JSON
         DOTFILES_DIR="$DOTFILES_DIR" "$DOTFILES_DIR/bin/link-agent-skills"
     fi
 
+    if [ -x "$DOTFILES_DIR/bin/install-agent-skill-sync" ]; then
+        DOTFILES_DIR="$DOTFILES_DIR" "$DOTFILES_DIR/bin/install-agent-skill-sync"
+    fi
+
     success "Claude Code configured"
 else
     warn "Dotfiles directory not found, skipping configuration"

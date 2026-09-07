@@ -113,7 +113,7 @@ The installation creates symlinks from your home directory to the dotfiles repos
 | `~/.claude/CLAUDE.md` | `~/.dotfiles/config/claude/AGENTS.md` | Agent instructions (Claude reads `CLAUDE.md`, not `AGENTS.md`) |
 | `~/.claude/settings.json` | `~/.dotfiles/config/claude/settings.json` | Claude Code settings |
 | `~/.codex/AGENTS.md` | `~/.dotfiles/config/claude/AGENTS.md` | The same instructions, read natively by Codex |
-| `~/.codex/skills/*` | `~/.dotfiles/config/claude/skills/*` | One symlink per shared skill, see `bin/link-agent-skills` |
+| `~/.agents/skills/*` | `~/.dotfiles/config/claude/skills/*` | One symlink per shared skill, discovered by Codex. See `bin/link-agent-skills` |
 | `~/.config/zed/settings.json` | `~/.dotfiles/config/zed/settings.json` | Zed editor settings |
 | `~/.config/zed/keymap.json` | `~/.dotfiles/config/zed/keymap.json` | Zed custom keybindings |
 | `~/.config/ghostty/config` | `~/.dotfiles/config/ghostty/config` | Ghostty terminal settings |
@@ -361,7 +361,7 @@ Most delegation now happens through plugins instead, notably the `laravel-simpli
 
 Findings are deduplicated, and security outranks correctness, which outranks conventions. Both defect lanes require a concrete failure scenario, so "consider adding a null check" does not count as a finding.
 
-The lanes file has a per-harness table, so the same review runs under Codex using its `review-agent` skill.
+The lanes file has a per-harness table, so the same review runs under Codex with its own tools and available subagents. No separate `review-agent` skill is needed.
 
 
 ### Settings Worth Knowing
@@ -375,13 +375,19 @@ The lanes file has a per-harness table, so the same review runs under Codex usin
 
 ### Sharing With Codex
 
-Codex reads `AGENTS.md` natively and Claude Code reads `CLAUDE.md`, so one file is symlinked under both names. Skills are a different story: Codex keeps its own `~/.codex/skills/` alongside its built-in `.system` skills, so a directory symlink would destroy those. `bin/link-agent-skills` links the harness-neutral skills one by one instead.
+Codex reads `AGENTS.md` natively and Claude Code reads `CLAUDE.md`, so one file is symlinked under both names. Skills also have one source: `config/claude/skills/`. Claude reads it through `~/.claude/skills`; Codex reads individual symlinks in `~/.agents/skills`, its [documented user skill directory](https://learn.chatgpt.com/docs/build-skills). Codex's built-in `~/.codex/skills/.system` stays separate.
 
 ```bash
-bin/link-agent-skills
+bin/install-agent-skill-sync
 ```
 
-Excluded from sharing: `ui` (needs a Claude MCP tool), `typefully` (Claude-specific `allowed-tools`), and the plugin directories, which have no top-level `SKILL.md`.
+The script automatically links every directory with a top-level `SKILL.md`, except `ui` and `typefully`, which retain their Claude-specific integrations. Nested plugin skills remain scoped to their plugins and are not installed globally by this script. Sharing skill files does not install Claude plugins, MCP servers, or named subagents into Codex.
+
+The macOS installer enables a per-user LaunchAgent, `be.freek.agent-skill-sync`, so no command is needed when adding skills. It runs at login, watches the source directory, and checks every 60 seconds for changes inside existing folders. Removed or renamed skills have their old managed links cleaned up. `bin/install-claude-code` installs this job automatically on new machines.
+
+Edits to an already linked skill are shared immediately. Existing installations with the same directory name are moved to `~/.agents/backups/link-agent-skills.*` before linking; unrelated skills are preserved. Repeated runs leave correct links alone. To run a check immediately, use `bin/link-agent-skills`. Background errors go to `~/Library/Logs/be.freek.agent-skill-sync.log`.
+
+In Codex, invoke `$review-code` or `$review-pr`. If a newly linked skill does not appear, restart Codex. The PR skill retains its existing review-and-merge workflow; the code review skill can apply fixes.
 
 ### Adding New Skills
 
@@ -389,9 +395,7 @@ Excluded from sharing: `ui` (needs a Claude MCP tool), `typefully` (Claude-speci
 # Install a skill (adds directly to your dotfiles)
 npx skills add <owner/repo>
 
-# Share it with Codex too, if it is harness-neutral
-# (add it to the SHARED list in bin/link-agent-skills)
-bin/link-agent-skills
+# Codex links are created automatically within a minute.
 
 cd ~/.dotfiles
 git add config/claude/skills/
@@ -464,6 +468,7 @@ The `bin/` directory contains helper scripts:
 - **install** - Main installation script (idempotent, safe to re-run)
 - **install-claude-code** - Standalone installer for the AI setup: the CLI, the symlinks, and the Codex links
 - **link-agent-skills** - Symlink the harness-neutral skills and `AGENTS.md` into Codex, leaving Codex's own built-in skills alone
+- **install-agent-skill-sync** - Install the macOS background job that keeps shared skill links current automatically
 - **exclude-from-spotlight** - Drop a `.metadata_never_index` marker into data heavy directories so Spotlight skips them. Local database directories (DBngin and friends) hold hundreds of thousands of constantly rewritten files, which keeps `mds_stores` busy indefinitely.
 - **update** - Update dotfiles, Homebrew, npm, and Composer packages
 - **doctor** - Health check and diagnostic tool

@@ -53,7 +53,7 @@ Run all lanes in parallel, in a single message.
 
 | Lane | How |
 |---|---|
-| 1 correctness | the `review-agent` skill, delegating the target to it |
+| 1 correctness | review the target for bugs directly, or delegate to an available subagent. Require a concrete failure scenario and `file:line` evidence. No separate `review-agent` skill is required. |
 | 2 PHP simplification | the simplifier is a Claude plugin agent, but its definition is a plain file. Read `~/.claude/plugins/cache/laravel/laravel-simplifier/*/agents/laravel-simplifier.md` and apply it yourself. If that path does not exist, say the lane was skipped. |
 | 3 Spatie conventions | read `spatie-guidelines` and apply it to the changed files yourself |
 | 4 Laravel practices | **only if `laravel-best-practices` is readable from this repo.** It is normally installed by Laravel Boost into `<repo>/.claude/skills/`, which Codex does not load. Read that path directly if it exists, otherwise say the lane was skipped. |
