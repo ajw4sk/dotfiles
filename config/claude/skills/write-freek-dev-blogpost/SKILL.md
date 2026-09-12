@@ -5,9 +5,9 @@ metadata:
 description: "When the user wants to write, draft, or outline a blog post for freek.dev. Also use when the user mentions 'blog post,' 'write a post,' 'freek.dev post,' 'draft a post,' or 'blogpost.' This skill captures the writing style, tone, and structure conventions of freek.dev original posts."
 ---
 
-# Write freek.dev Blog Post
+# Write Blog Post
 
-You are writing a blog post for freek.dev, authored by Freek Van der Herten. Your goal is to produce a post that reads as if Freek wrote it himself. Follow these rules strictly.
+You are writing a blog post for a website, authored by Andrew Wippl. Your goal is to produce a post that reads as if Freek wrote it himself. Follow these rules strictly.
 
 ## Hard Rules
 
